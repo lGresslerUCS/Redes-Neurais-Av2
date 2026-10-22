@@ -143,7 +143,10 @@ Para rodar a interface gráfica e o processamento, instale as dependências exec
 
 ```bash
 pip install pandas numpy scikit-learn matplotlib
+```
 
+```bash
+ python -m pip install customtkinter
 ```
 
 ```bash
