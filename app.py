@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading
 
-# Novas bibliotecas permitidas
+# Bibliotecas permitidas
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
@@ -22,11 +22,12 @@ def sigmoid_derivative(x):
 # ==========================================
 # Lógica de Treinamento e Avaliação
 # ==========================================
-def run_model(output_text, frame_graficos):
+def run_model(output_text, frame_graficos, epochs, learning_rate, hidden_size):
     try:
         output_text.insert(tk.END, "Carregando dados, normalizando e iniciando treinamento...\n")
+        output_text.insert(tk.END, f"Parâmetros -> Épocas: {epochs} | LR: {learning_rate} | Neurônios: {hidden_size}\n")
         
-        # 1. Preparação dos Dados (usando pandas)
+        # 1. Preparação dos Dados
         df = pd.read_csv("dataset.csv")
         df = df.dropna(subset=['Performance'])
         df['Performance'] = df['Performance'].map({'Bad': 0, 'Good': 1})
@@ -39,7 +40,7 @@ def run_model(output_text, frame_graficos):
         y = df['Performance'].values.reshape(-1, 1)
         X = X.fillna(X.median())
 
-        # Normalização usando biblioteca (MinMaxScaler)
+        # Normalização usando biblioteca
         scaler = MinMaxScaler()
         X_np = scaler.fit_transform(X)
 
@@ -53,7 +54,6 @@ def run_model(output_text, frame_graficos):
 
         # 2. Implementação do Modelo (MLP do Zero)
         input_size = X_train.shape[1]
-        hidden_size = 16
         output_size = 1
 
         weights_input_hidden = np.random.uniform(-1, 1, (input_size, hidden_size))
@@ -61,15 +61,11 @@ def run_model(output_text, frame_graficos):
         bias_hidden = np.zeros((1, hidden_size))
         bias_output = np.zeros((1, output_size))
 
-        epochs = 2000
-        learning_rate = 0.01
-        
-        # Armazenar o erro para o gráfico
         historico_erro = []
 
         output_text.insert(tk.END, f"Treinando por {epochs} épocas...\n")
         
-        # 3. Treinamento (Matemática Manual)
+        # 3. Treinamento
         for epoch in range(epochs):
             # Forward pass
             hidden_input = np.dot(X_train, weights_input_hidden) + bias_hidden
@@ -89,8 +85,8 @@ def run_model(output_text, frame_graficos):
             weights_input_hidden += X_train.T.dot(d_hidden) * learning_rate
             bias_hidden += np.sum(d_hidden, axis=0, keepdims=True) * learning_rate
             
-            # Salvar erro médio absoluto da época
-            if epoch % 10 == 0:
+            # Salvar erro para o gráfico
+            if epoch % (max(1, epochs // 100)) == 0:  # Ajusta a captura de erro dinamicamente
                 historico_erro.append(np.mean(np.abs(error)))
 
         # 4. Avaliação
@@ -98,17 +94,15 @@ def run_model(output_text, frame_graficos):
         final_test = sigmoid(np.dot(hidden_test, weights_hidden_output) + bias_output)
         y_pred = (final_test >= 0.5).astype(int)
 
-        # Geração da Matriz de Confusão usando biblioteca
+        # Matriz de Confusão e Métricas
         cm = confusion_matrix(y_test, y_pred)
-        # Extração manual para cálculo de métricas
         tn, fp, fn, tp = cm.ravel()
 
-        # Cálculo manual de métricas estritamente sem biblioteca
         accuracy = (tp + tn) / (tp + tn + fp + fn)
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
 
-        # Atualização da Interface de Texto
+        # Atualização da Interface
         output_text.insert(tk.END, "-"*40 + "\n")
         output_text.insert(tk.END, "Treinamento Concluído!\n")
         output_text.insert(tk.END, f"Acurácia: {accuracy:.4f}\n")
@@ -116,8 +110,9 @@ def run_model(output_text, frame_graficos):
         output_text.insert(tk.END, f"Recall:   {recall:.4f}\n\n")
         output_text.see(tk.END)
 
-        # Atualização dos Gráficos (usando event loop principal para evitar erros de thread no Matplotlib)
-        output_text.after(0, plot_graphics, frame_graficos, historico_erro, cm)
+        # Atualização dos Gráficos
+        x_axis_labels = range(0, epochs, max(1, epochs // 100))
+        output_text.after(0, plot_graphics, frame_graficos, historico_erro, cm, list(x_axis_labels))
 
     except FileNotFoundError:
         messagebox.showerror("Erro", "O arquivo 'dataset.csv' não foi encontrado no diretório!")
@@ -127,15 +122,14 @@ def run_model(output_text, frame_graficos):
 # ==========================================
 # Geração de Gráficos (Matplotlib)
 # ==========================================
-def plot_graphics(frame, historico_erro, cm):
-    # Limpar gráficos antigos
+def plot_graphics(frame, historico_erro, cm, x_axis_labels):
     for widget in frame.winfo_children():
         widget.destroy()
         
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
     
     # Gráfico 1: Curva de Erro
-    ax1.plot(range(0, 2000, 10), historico_erro, color='red')
+    ax1.plot(x_axis_labels, historico_erro, color='red')
     ax1.set_title("Curva de Aprendizado (Erro Absoluto)")
     ax1.set_xlabel("Épocas")
     ax1.set_ylabel("Erro")
@@ -147,15 +141,26 @@ def plot_graphics(frame, historico_erro, cm):
     
     plt.tight_layout()
     
-    # Embutir no Tkinter
     canvas = FigureCanvasTkAgg(fig, master=frame)
     canvas.draw()
     canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-# Usa threading para manter a interface responsiva durante o loop da rede
-def start_training_thread(output_text, frame_graficos):
+# Lida com a validação dos parâmetros e chama a Thread
+def start_training_thread(output_text, frame_graficos, ent_epochs, ent_lr, ent_hidden):
+    try:
+        epochs = int(ent_epochs.get())
+        learning_rate = float(ent_lr.get())
+        hidden_size = int(ent_hidden.get())
+        
+        if epochs <= 0 or learning_rate <= 0 or hidden_size <= 0:
+            raise ValueError("Os valores devem ser maiores que zero.")
+            
+    except ValueError:
+        messagebox.showerror("Erro de Validação", "Por favor, insira números válidos nos parâmetros (inteiros para épocas/neurônios, decimal usando ponto para taxa).")
+        return
+
     output_text.delete(1.0, tk.END)
-    thread = threading.Thread(target=run_model, args=(output_text, frame_graficos))
+    thread = threading.Thread(target=run_model, args=(output_text, frame_graficos, epochs, learning_rate, hidden_size))
     thread.start()
 
 # ==========================================
@@ -164,27 +169,52 @@ def start_training_thread(output_text, frame_graficos):
 def create_ui():
     janela = tk.Tk()
     janela.title("Previsor de Desempenho NBA - MLP do Zero")
-    janela.geometry("900x650")
+    janela.geometry("900x700")
     janela.configure(padx=10, pady=10)
 
-    # Painel Superior (Texto e Botão)
+    # Painel Superior
     frame_top = tk.Frame(janela)
     frame_top.pack(fill=tk.X, pady=5)
     
-    lbl_title = tk.Label(frame_top, text="Rede Neural Multicamada (MLP) com Gráficos", font=("Arial", 14, "bold"))
-    lbl_title.pack()
+    lbl_title = tk.Label(frame_top, text="Rede Neural Multicamada (MLP)", font=("Arial", 14, "bold"))
+    lbl_title.pack(pady=(0, 10))
+
+    # --- INÍCIO: Painel de Configurações ---
+    frame_config = tk.Frame(frame_top, relief=tk.GROOVE, bd=2, padx=10, pady=10)
+    frame_config.pack(fill=tk.X, pady=5)
+    
+    tk.Label(frame_config, text="Configuração de Hiperparâmetros:", font=("Arial", 10, "bold")).grid(row=0, column=0, columnspan=6, sticky="w", pady=(0,5))
+
+    # Épocas
+    tk.Label(frame_config, text="Épocas:").grid(row=1, column=0, padx=5, sticky="e")
+    ent_epochs = tk.Entry(frame_config, width=10)
+    ent_epochs.insert(0, "2000")
+    ent_epochs.grid(row=1, column=1, padx=5)
+
+    # Learning Rate
+    tk.Label(frame_config, text="Taxa de Aprendizado:").grid(row=1, column=2, padx=5, sticky="e")
+    ent_lr = tk.Entry(frame_config, width=10)
+    ent_lr.insert(0, "0.01")
+    ent_lr.grid(row=1, column=3, padx=5)
+
+    # Neurônios Camada Oculta
+    tk.Label(frame_config, text="Neurônios (Camada Oculta):").grid(row=1, column=4, padx=5, sticky="e")
+    ent_hidden = tk.Entry(frame_config, width=10)
+    ent_hidden.insert(0, "16")
+    ent_hidden.grid(row=1, column=5, padx=5)
+    # --- FIM: Painel de Configurações ---
 
     output_text = scrolledtext.ScrolledText(frame_top, width=100, height=8, font=("Consolas", 10))
-    output_text.pack(pady=5)
-    output_text.insert(tk.END, "Clique no botão abaixo para treinar a rede e gerar os gráficos...\n")
+    output_text.pack(pady=10)
+    output_text.insert(tk.END, "Ajuste os parâmetros acima e clique no botão para treinar a rede...\n")
 
     # Painel Inferior (Gráficos)
     frame_graficos = tk.Frame(janela, bg="white", relief=tk.SUNKEN, bd=1)
     frame_graficos.pack(fill=tk.BOTH, expand=True, pady=5)
 
     btn_train = tk.Button(frame_top, text="Treinar Modelo e Avaliar", 
-                          font=("Arial", 12), bg="lightblue", 
-                          command=lambda: start_training_thread(output_text, frame_graficos))
+                          font=("Arial", 12, "bold"), bg="#4CAF50", fg="white",
+                          command=lambda: start_training_thread(output_text, frame_graficos, ent_epochs, ent_lr, ent_hidden))
     btn_train.pack(fill=tk.X)
 
     janela.mainloop()
