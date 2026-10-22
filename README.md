@@ -148,3 +148,8 @@ pip install pandas numpy scikit-learn matplotlib
 
 ```bash
 python app.py
+```
+
+Link do repositorio: https://github.com/lGresslerUCS/Redes-Neurais-Av2
+
+Link dos slides: https://docs.google.com/presentation/d/1wqD26aqUkt7ciry6pdgZE1XnYa8DOdfJF7GM6AjQwso/edit?usp=sharing
